@@ -2,19 +2,15 @@
 
 每次创建一个连接Connection的时候，都是重新创建，使用完之后又丢掉了，如果频繁地有创建Connection的请求，那么创建Connection的开销是非常大的，如下图1所示。而这一部分的性能开销，其实可以通过回收并且再分配Connection的方式来减少，而这一步就是所谓的池化Pooling。
 
-## ![](https://oscimg.oschina.net/oscnet/up-97be502e5250f47f2f189a005865146197f.png)
-
-图1 原始的创建连接的模型
+![](https://oscimg.oschina.net/oscnet/up-99714f0c347860c44aa451ae72397e3d447.png)
 
 ## 2\. 实现池化思考过程
 
 我们先来思考一下，要实现池化的话，需要哪些必要的东西或者组件呢？首先最容易想到的一点就是，肯定需要一个池子，池子是一个必须存在客观的对象，而池子的作用就是用来分配和回收连接的，因此我们现在的脑海中应该有一幅类似下面这样的概念图。现在看来，毫无疑问这里面应该要有两种对象，一个是池子ConnectionPool，一个是连接Connection，下面都分别称作ConnectionPool和Connection。
 
-![](https://oscimg.oschina.net/oscnet/up-31e7795ba104ca29f0a377f96a2dc23648f.png)
+![](https://oscimg.oschina.net/oscnet/up-52f894551bc7dd13b3411f50d48cda1163e.png)
 
-图2 对连接做池化的概念模型图
-
-那么现在问题的关键在于，ConnectionPool怎么创建和回收Connection呢？创建和回收分别和create、close这两个操作相关，create是ConnectionPool发出的，而close则应该是由Connection发出。我们接着继续想这个问题，肯定是先有create再有close，所以我们先考虑create这个操作应该怎么创建Connection，ConnectionPool本身只是负责分配和回收Connection，所以这里真正创建Connection的步骤，应该要借助ConnectionFactory来实现。所以我们现在意识到了一点，ConnectionPool里面必然要包含ConnectionFactory这样的一个对象，即使不存在ConnectionFactory，也必然会在概念上存在这样的一个角色。
+那么现在问题的关键在于，ConnectionPool怎么创建和回收Connection呢？创建和回收分别和create、close这两个操作相关，create是ConnectionPool发出的，而close则应该是由Connection发出。我们接着继续想这个问题，肯定是先有create再有close，所以我们先考虑这个操作应该怎么创建Connection，ConnectionPool本身只是负责分配和回收Connection，所以这里真正创建Connection的步骤，应该要借助ConnectionFactory来实现。所以我们现在意识到了一点，ConnectionPool里面必然要包含ConnectionFactory这样的一个对象，即使不存在ConnectionFactory，也必然会在概念上存在这样的一个角色。
 
 继续往下想，ConnectionPool既然要做到回收并且再利用Connection，那它肯定必须要有存储Connection的容器，因此应该要有一个队列List来存放可再利用的Connection。现在的问题是，什么时候往这个List里面add Connection，以及什么时候从List里面get Connection呢？1）add Connection应该是Connection close的时候，因为要回收Connection，所以不能让Connection真的close掉，而应该在它close的时候将它放入到List里面；2）对应的get Connection应该是在ConnectionPool进行create Connection操作的时候发生，ConnectionPool应该先检查List里面有没有空闲的Connection，如果有就拿出来分配，如果没有的话那就利用ConnectionFactory去真正地创建一个Connection再分配。
 
@@ -22,10 +18,7 @@
 
 到现在为止，我们的脑海中的模型在图2的基础上进一步峰峰了，它应该是这样的：
 
-![](https://oscimg.oschina.net/oscnet/up-7fb2cd520bee208cbaec426c24d8eae359a.png)
-
-图3 更清晰的对连接做池化的概念模型图
-
+![](https://oscimg.oschina.net/oscnet/up-265d6cbcb107d389cd57b2d3941ed1000c1.png)
 ## 3\. 池化的实现范例
 
 基于上面的思路，一个完整的池化实现范例的UML类图如下图所示，此处稍有几点不同需要注意：
@@ -36,8 +29,6 @@
 
 3）PooledConnection对Connection做了代理，增加了一些关于Connection的状态信息，比如最后使用的时间戳lastUsedTimestamp，每次调用方法的时候都去更新这个lastUsedTimestamp。记录这个lastUsedTimestamp有什么好处呢？当ConnectionPool要分配PooledConnection却没有空闲的PooledConnection时，可以从使用中的PooledConnection里面看看有没有超时的，如果有那就直接回收它用它来分配，那判断超时这一步就可以基于lastUsedTimestamp来做了。
 
-![](https://oscimg.oschina.net/oscnet/up-2b84aec71a81fe741427da9a44546e533a0.png)
-
-图4 一个完整的池化范例的UML类图
+![](https://oscimg.oschina.net/oscnet/up-d2a3f9422de803a71120c0f144892a6a67d.png)
 
 对应的代码可以在这个github地址中获取：[https://github.com/JiamingMai/pooling-demo](https://github.com/JiamingMai/pooling-demo) 代码在MyBatis源码当中的数据源模块的基础上改造，有兴趣的同学可以参考MyBatis源码当中的PooledDataSource这个类。
